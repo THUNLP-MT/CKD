@@ -1,4 +1,4 @@
-bpe_path=/data/home/scv0107/run/zyc/125w-zip/subword-nmt
+bpe_path=/data/home/scv0107/run/zyc/THUMTA/subword-nmt
 corpus_path=/data/home/scv0107/run/zyc/125w-zip
 thumt_pth=THUMTA/thumt/scripts
 

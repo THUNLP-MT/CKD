@@ -27,5 +27,5 @@ python3 -u ${CODE_PATH}/thumt/bin/trainer.py \
   --validation ${TEST_PATH}/nist06/nist06.32k.zh \
   --references "${TEST_PATH}/nist06/nist06.en*" \
   --output ${OUTPUT_PATH} \
-  --parameters=batch_size=16384,device_list=[0,1,2,3],update_cycle=2,keep_top_checkpoint_max=1,eval_steps=500 \
+  --parameters=batch_size=16384,device_list=[0],update_cycle=2,keep_top_checkpoint_max=1,eval_steps=500 \
   --hparam_set bases 2>&1 | tee ${LOGDIR}
