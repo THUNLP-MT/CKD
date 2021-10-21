@@ -300,9 +300,13 @@ class Transformer(modules.Module):
         mask = features["target_mask"]
 
         state = self.empty_state(features["target"].shape[0],
-                                 labels.device)
+                                 features["target"].device)
         state = self.encode(features, state)
         logits, _ = self.decode(features, state, mode=mode)
+
+        if mode == "teacher":
+            return logits
+
         loss = self.criterion(logits, labels)
         mask = mask.to(torch.float32)
 
@@ -315,6 +319,10 @@ class Transformer(modules.Module):
                 return -torch.sum(loss * mask, 1)
             else:
                 return  torch.exp(-loss) * mask - (1 - mask)
+
+
+        if mode == "student":
+            return logits,mask,(torch.sum(loss * mask) / torch.sum(mask)).to(logits)
 
         return (torch.sum(loss * mask) / torch.sum(mask)).to(logits)
 

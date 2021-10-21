@@ -31,6 +31,8 @@ def parse_args(args=None):
     )
 
     # input files
+    parser.add_argument("--teacher",type=str)
+    parser.add_argument("--teacher_path",type=str)
     parser.add_argument("--input", type=str, nargs=2,
                         help="Path to source and target corpus.")
     parser.add_argument("--output", type=str, default="train",
@@ -433,10 +435,49 @@ def main(args):
         epoch = 0
         broadcast(model)
 
+    def load_distill_teacher():
+        model_cls=models.get_model(args.teacher)
+        params=default_params()
+        params=merge_params(params,model_cls.default_params(args.hparam_set))
+        params=import_params(args.teacher_path,args.teacher,params)
+        params=override_params(params,args)
+
+        if args.distributed:
+            params.device=args.local_rank
+        else:
+            params.device=params.device_list[args.local_rank]
+
+        model=model_cls(params).cuda()
+        if args.half:
+            model=model.half()
+
+        model.eval()
+        checkpoint=utils.latest_checkpoint(args.teacher_path)
+        state=torch.load(checkpoint,map_location="cpu")
+        model.load_state_dict(state["model"])
+        broadcast(model)
+
+        return model,torch.nn.KLDivLoss(log_target=True,reduction="none")
+
+    if args.teacher:
+        teacher_model,kv_div_loss=load_distill_teacher()
+
     def train_fn(inputs):
         features, labels = inputs
         loss = model(features, labels)
         return loss
+
+    def distll_fn(inputs):
+        features, labels = inputs
+        with torch.no_grad():
+            teacher_logits=teacher_model(features,labels,mode="teacher")
+        student_logits,masks,loss=model(features,labels,mode="student")
+
+        soft_targets=torch.nn.functional.log_softmax(teacher_logits,dim=-1)
+        soft_prob=torch.nn.functional.log_softmax(student_logits,dim=-1)
+
+        soft_target_loss=(kv_div_loss(soft_prob,soft_targets) * masks.reshape(-1,1)).sum()/masks.sum()
+        return soft_target_loss,loss
 
     counter = 0
 
@@ -448,7 +489,13 @@ def main(args):
 
             counter += 1
             t = time.time()
-            loss = train_fn(features)
+            if args.teacher:
+                soft_target_loss,nll_loss= distll_fn(features)
+                loss=soft_target_loss*0.5+nll_loss*0.5
+                summary.scalar("distill_loss", soft_target_loss, step, write_every_n_steps=1)
+                summary.scalar("nll_loss", nll_loss, step, write_every_n_steps=1)
+            else:
+                loss = train_fn(features)
             gradients = optimizer.compute_gradients(loss,
                                                     list(model.parameters()))
             grads_and_vars = exclude_variables(
@@ -461,7 +508,11 @@ def main(args):
             summary.scalar("loss", loss, step, write_every_n_steps=1)
             summary.scalar("global_step/sec", t, step)
 
-            print("epoch = %d, step = %d, loss = %.3f (%.3f sec)" %
+            if args.teacher:
+                print("epoch = %d, step = %d, distill_loss = %.3f, nll_loss = %.3f, loss = %.3f (%.3f sec)" %
+                      (epoch + 1, step, float(soft_target_loss), float(nll_loss), float(loss), t))
+            else:
+                print("epoch = %d, step = %d, loss = %.3f (%.3f sec)" %
                   (epoch + 1, step, float(loss), t))
 
             if counter % params.update_cycle == 0:
