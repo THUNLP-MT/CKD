@@ -385,6 +385,24 @@ class Transformer(modules.Module):
 
         return params
 
+
+    @staticmethod
+    def base_but_4_layer():
+        params = Transformer.base_params()
+        params.num_encoder_layers=4
+        params.num_decoder_layers=4
+
+        return params
+
+    @staticmethod
+    def base_but_2_layer():
+        params = Transformer.base_params()
+        params.num_encoder_layers=2
+        params.num_decoder_layers=2
+
+        return params
+
+
     @staticmethod
     def base_params_v2():
         params = Transformer.base_params()
@@ -431,5 +449,9 @@ class Transformer(modules.Module):
             return Transformer.big_params()
         elif name == "big_v2":
             return Transformer.big_params_v2()
+        elif name == "base_4":
+            return Transformer.base_but_4_layer()
+        elif name == "base_2":
+            return Transformer.base_but_2_layer()
         else:
             return Transformer.base_params()
