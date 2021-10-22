@@ -146,6 +146,18 @@ def import_params(model_dir, model_name, params):
 
     return params
 
+def teacher_model_parameter_restore(model_dir, model_name, params):
+    model_dir = os.path.abspath(model_dir)
+    m_name = os.path.join(model_dir, model_name + ".json")
+
+    if os.path.exists(m_name):
+        with open(m_name) as fd:
+            logging.info("Restoring teacher model parameters from %s" % m_name)
+            json_str = fd.readline()
+            params.parse_json(json_str)
+
+    return params
+
 
 def export_params(output_dir, name, params):
     if not os.path.exists(output_dir):
@@ -443,6 +455,7 @@ def main(args):
         params=merge_params(params,model_cls.default_params(args.hparam_set))
         params=import_params(args.teacher_path,args.teacher,params)
         params=override_params(params,args)
+        params=teacher_model_parameter_restore(args.teacher_path,args.teacher,params)
 
         if args.distributed:
             params.device=args.local_rank
