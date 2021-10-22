@@ -376,6 +376,8 @@ def main(args):
         export_params(params.output, "params.json", params)
         export_params(params.output, "%s.json" % params.model,
                       collect_params(params, model_cls.default_params()))
+        model_params=collect_params(params, model_cls.default_params())
+
 
     model = model_cls(params).cuda()
 
@@ -457,10 +459,20 @@ def main(args):
         model.load_state_dict(state["model"])
         broadcast(model)
 
-        return model,torch.nn.KLDivLoss(log_target=True,reduction="none")
+        return model,params,torch.nn.KLDivLoss(log_target=True,reduction="none")
 
     if args.teacher:
-        teacher_model,kv_div_loss=load_distill_teacher()
+        teacher_model,teacher_params,kv_div_loss=load_distill_teacher()
+
+    if dist.get_rank() == 0:
+        if args.teacher:
+            print("Distillation Enabled. Student {} ,Teacher {}".format(args.model,args.teacher))
+            for i in six.iterkeys(model_params.values()):
+                print(getattr(model_params, i)==getattr(teacher_params,i),'\t',i, getattr(model_params, i),getattr(teacher_params,i))
+        else:
+            print("Distillation Disabled. Model %s" % args.model)
+            for i in six.iterkeys(model_params.values()):
+                print(i,getattr(model_params,i))
 
     def train_fn(inputs):
         features, labels = inputs
