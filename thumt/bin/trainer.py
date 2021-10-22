@@ -491,7 +491,7 @@ def main(args):
             t = time.time()
             if args.teacher:
                 soft_target_loss,nll_loss= distll_fn(features)
-                loss=soft_target_loss*0.5+nll_loss*0.5
+                loss=soft_target_loss*1+nll_loss*0
                 summary.scalar("distill_loss", soft_target_loss, step, write_every_n_steps=1)
                 summary.scalar("nll_loss", nll_loss, step, write_every_n_steps=1)
             else:
