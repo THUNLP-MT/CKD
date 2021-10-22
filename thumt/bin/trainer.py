@@ -480,11 +480,11 @@ def main(args):
     if dist.get_rank() == 0:
         if args.teacher:
             print("Distillation Enabled. Student {} ,Teacher {}".format(args.model,args.teacher))
-            for i in six.iterkeys(model_params.values()):
+            for i in six.iterkeys(params.values()):
                 print(getattr(model_params, i)==getattr(teacher_params,i),'\t',i, getattr(model_params, i),getattr(teacher_params,i))
         else:
             print("Distillation Disabled. Model %s" % args.model)
-            for i in six.iterkeys(model_params.values()):
+            for i in six.iterkeys(params.values()):
                 print(i,getattr(model_params,i))
 
     def train_fn(inputs):
