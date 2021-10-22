@@ -388,7 +388,6 @@ def main(args):
         export_params(params.output, "params.json", params)
         export_params(params.output, "%s.json" % params.model,
                       collect_params(params, model_cls.default_params()))
-        model_params=collect_params(params, model_cls.default_params())
 
 
     model = model_cls(params).cuda()
@@ -481,11 +480,11 @@ def main(args):
         if args.teacher:
             print("Distillation Enabled. Student {} ,Teacher {}".format(args.model,args.teacher))
             for i in six.iterkeys(params.values()):
-                print(getattr(model_params, i)==getattr(teacher_params,i),'\t',i, getattr(model_params, i),getattr(teacher_params,i))
+                print(getattr(params, i)==getattr(teacher_params,i),'\t',i, getattr(params, i),getattr(teacher_params,i))
         else:
             print("Distillation Disabled. Model %s" % args.model)
             for i in six.iterkeys(params.values()):
-                print(i,getattr(model_params,i))
+                print(i,getattr(params,i))
 
     def train_fn(inputs):
         features, labels = inputs
