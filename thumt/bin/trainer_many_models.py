@@ -347,7 +347,7 @@ def load_references(pattern):
 
 def main(args):
     # 初始化单个模型的子函数
-    def model_init(mode="train",output_path=None,optimizer_type="normal"):
+    def model_init(mode="train",output_path=None,optimizer_resume=True):
         # 获取模型的默认参数
         model_cls = models.get_model(args.model)
         params = default_params()
@@ -411,8 +411,11 @@ def main(args):
         optimizer = optimizers.MultiStepOptimizer(optimizer, params.update_cycle)
 
         # 参数表
+        print("*"*15,"MODEL %s" % params.model,"*"*15)
         trainable_flags = print_variables(model, params.pattern,
                                           dist.get_rank() == 0)
+        print("*"*30)
+
         # 载入checkpoint
         checkpoint = utils.latest_checkpoint(params.output)
 
@@ -431,7 +434,7 @@ def main(args):
             epoch = state["epoch"]
             model.load_state_dict(state["model"])
 
-            if "optimizer" in state:
+            if "optimizer" in state and optimizer_resume:
                 optimizer.load_state_dict(state["optimizer"])
         # 从头开始
         else:
@@ -463,6 +466,8 @@ def main(args):
         print("Model %s" % args.model)
         for i in six.iterkeys(params.values()):
             print(i,getattr(params,i))
+        print("*"*30)
+
 
     # 训练函数
     def train_fn(inputs):
