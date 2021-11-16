@@ -468,11 +468,11 @@ def main(args):
         return model,params,step,epoch,optimizer,trainable_flags,summary,sorted_key, eval_dataset,references
 
     # 训练一趟
-    def gradient_des(train_fn, features, optimizer, model, trainable_flags, step, epoch, counter, params, sorted_key,
-                     eval_dataset, references):
+    def gradient_des(loss, optimizer, model, trainable_flags, step, epoch, counter, params, sorted_key,
+                     eval_dataset, references,alias):
         t = time.time()
         # 计算损失和梯度
-        loss = train_fn(features)
+        # loss = train_fn(features)
         gradients = optimizer.compute_gradients(loss,
                                                 list(model.parameters()))
         # 梯度下降
@@ -485,7 +485,7 @@ def main(args):
         t = time.time() - t
         summary.scalar("loss", loss, step, write_every_n_steps=1)
         summary.scalar("global_step/sec", t, step)
-        print("epoch = %d, step = %d, loss = %.3f (%.3f sec)" %
+        print(alias, ": epoch = %d, step = %d, loss = %.3f (%.3f sec)" %
               (epoch + 1, step, float(loss), t))
 
         if counter % params.update_cycle == 0:
@@ -515,12 +515,6 @@ def main(args):
     # 载入数据集和验证集
     dataset = data.MTPipeline.get_train_dataset(params.input, params)
 
-    # 训练函数
-    def train_fn(inputs):
-        features, labels = inputs
-        loss = model(features, labels)
-        return loss
-
     # 训练计数
     counter = 0
 
@@ -532,7 +526,10 @@ def main(args):
                 step += 1
                 utils.set_global_step(step)
             counter += 1
-            gradient_des(train_fn,features,optimizer,model,trainable_flags,step,epoch,counter,params,sorted_key,eval_dataset,references)
+
+            feature,label=features
+            loss=model(feature,label)
+            gradient_des(loss,optimizer,model,trainable_flags,step,epoch,counter,params,sorted_key,eval_dataset,references,"Model 1")
 
         # 一个epoch结束
         epoch += 1
