@@ -444,32 +444,76 @@ def main(args):
             epoch = 0
             broadcast(model)
 
-        return model,params,step,epoch,optimizer,trainable_flags
+        # tensorboard 初始化
+        global summary
+        summary.init(params.output, params.save_summary)
 
-    # 实例化模型中
-    model,params,step,epoch,optimizer,trainable_flags=model_init()
+        # 打印模型参数
+        if dist.get_rank() == 0:
+            print("Model %s" % args.model)
+            for i in six.iterkeys(params.values()):
+                print(i, getattr(params, i))
+            print("*" * 30)
 
-    # tensorboard 初始化
-    summary.init(params.output, params.save_summary)
-    # 数据集
+        # 每个模型自己的验证集吧
+        if params.validation:
+            sorted_key, eval_dataset = data.MTPipeline.get_infer_dataset(
+                params.validation, params)
+            references = load_references(params.references)
+        else:
+            sorted_key = None
+            eval_dataset = None
+            references = None
+
+        return model,params,step,epoch,optimizer,trainable_flags,summary,sorted_key, eval_dataset,references
+
+    # 训练一趟
+    def gradient_des(train_fn, features, optimizer, model, trainable_flags, step, epoch, counter, params, sorted_key,
+                     eval_dataset, references):
+        t = time.time()
+        # 计算损失和梯度
+        loss = train_fn(features)
+        gradients = optimizer.compute_gradients(loss,
+                                                list(model.parameters()))
+        # 梯度下降
+        grads_and_vars = exclude_variables(
+            trainable_flags,
+            zip(gradients, list(model.named_parameters())))
+        optimizer.apply_gradients(grads_and_vars)
+
+        # 记录
+        t = time.time() - t
+        summary.scalar("loss", loss, step, write_every_n_steps=1)
+        summary.scalar("global_step/sec", t, step)
+        print("epoch = %d, step = %d, loss = %.3f (%.3f sec)" %
+              (epoch + 1, step, float(loss), t))
+
+        if counter % params.update_cycle == 0:
+            # 训练结束退出
+            if step >= params.train_steps:
+                utils.evaluate(model, sorted_key, eval_dataset,
+                               params.output, references, params)
+                save_checkpoint(step, epoch, model, optimizer, params)
+
+                if dist.get_rank() == 0:
+                    summary.close()
+
+                exit(867)
+
+            # 在验证集上评估
+            if step % params.eval_steps == 0:
+                utils.evaluate(model, sorted_key, eval_dataset,
+                               params.output, references, params)
+
+            # 保存checkpoint
+            if step % params.save_checkpoint_steps == 0:
+                save_checkpoint(step, epoch, model, optimizer, params)
+
+    # 实例化模型
+    model,params,step,epoch,optimizer,trainable_flags,summary,sorted_key, eval_dataset,references=model_init()
+
+    # 载入数据集和验证集
     dataset = data.MTPipeline.get_train_dataset(params.input, params)
-    # 载入验证集
-    if params.validation:
-        sorted_key, eval_dataset = data.MTPipeline.get_infer_dataset(
-            params.validation, params)
-        references = load_references(params.references)
-    else:
-        sorted_key = None
-        eval_dataset = None
-        references = None
-
-    # 打印模型参数
-    if dist.get_rank() == 0:
-        print("Model %s" % args.model)
-        for i in six.iterkeys(params.values()):
-            print(i,getattr(params,i))
-        print("*"*30)
-
 
     # 训练函数
     def train_fn(inputs):
@@ -487,46 +531,8 @@ def main(args):
             if counter % params.update_cycle == 0:
                 step += 1
                 utils.set_global_step(step)
-
             counter += 1
-            t = time.time()
-            # 计算损失和梯度
-            loss = train_fn(features)
-            gradients = optimizer.compute_gradients(loss,
-                                                    list(model.parameters()))
-            # 梯度下降
-            grads_and_vars = exclude_variables(
-                trainable_flags,
-                zip(gradients, list(model.named_parameters())))
-            optimizer.apply_gradients(grads_and_vars)
-
-            # 记录
-            t = time.time() - t
-            summary.scalar("loss", loss, step, write_every_n_steps=1)
-            summary.scalar("global_step/sec", t, step)
-            print("epoch = %d, step = %d, loss = %.3f (%.3f sec)" %
-                  (epoch + 1, step, float(loss), t))
-
-            if counter % params.update_cycle == 0:
-                # 训练结束退出
-                if step >= params.train_steps:
-                    utils.evaluate(model, sorted_key, eval_dataset,
-                                   params.output, references, params)
-                    save_checkpoint(step, epoch, model, optimizer, params)
-
-                    if dist.get_rank() == 0:
-                        summary.close()
-
-                    return
-
-                # 在验证集上评估
-                if step % params.eval_steps == 0:
-                    utils.evaluate(model, sorted_key, eval_dataset,
-                                   params.output, references, params)
-
-                # 保存checkpoint
-                if step % params.save_checkpoint_steps == 0:
-                    save_checkpoint(step, epoch, model, optimizer, params)
+            gradient_des(train_fn,features,optimizer,model,trainable_flags,step,epoch,counter,params,sorted_key,eval_dataset,references)
 
         # 一个epoch结束
         epoch += 1

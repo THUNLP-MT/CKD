@@ -448,6 +448,8 @@ def main(args):
 
     # 实例化模型中
     model,params,step,epoch,optimizer,trainable_flags=model_init()
+    model2,params2,step2,epoch2,optimizer2,trainable_flags2=model_init()
+    KLloss=torch.nn.KLDivLoss(log_target=True, reduction="none")
 
     # tensorboard 初始化
     summary.init(params.output, params.save_summary)
@@ -477,6 +479,16 @@ def main(args):
         loss = model(features, labels)
         return loss
 
+    def train_fn_mutual(inputs):
+        features, labels = inputs
+        logits, masks, loss = model(features, labels, mode="student")
+        logits2,masks2,loss2= model2(features, labels, mode="student")
+        prob=torch.nn.functional.log_softmax(logits,dim=-1)
+        prob2=torch.nn.functional.log_softmax(logits2,dim=-1)
+        loss_sum=(KLloss(prob,prob2.detach())* masks.reshape(-1,1)).sum()/masks.sum()
+        loss_sum2=(KLloss(prob2,prob.detach())* masks2.reshape(-1,1)).sum()/masks2.sum()
+        return loss_sum,loss_sum2
+
     # 训练计数
     counter = 0
 
@@ -491,14 +503,18 @@ def main(args):
             counter += 1
             t = time.time()
             # 计算损失和梯度
-            loss = train_fn(features)
+            loss,loss2 = train_fn_mutual(features)
             gradients = optimizer.compute_gradients(loss,
                                                     list(model.parameters()))
+            gradients2 = optimizer2.compute_gradients(loss2,
+                                                      list(model2.parameters()))
             # 梯度下降
             grads_and_vars = exclude_variables(
                 trainable_flags,
                 zip(gradients, list(model.named_parameters())))
+            grads_and_vars2=exclude_variables(trainable_flags2,zip(gradients2,list(model2.named_parameters())))
             optimizer.apply_gradients(grads_and_vars)
+            optimizer2.apply_gradients(grads_and_vars2)
 
             # 记录
             t = time.time() - t
