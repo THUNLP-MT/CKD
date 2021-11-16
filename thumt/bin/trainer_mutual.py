@@ -444,54 +444,82 @@ def main(args):
             epoch = 0
             broadcast(model)
 
-        return model,params,step,epoch,optimizer,trainable_flags
+        # tensorboard 初始化
+        global summary
+        summary.init(params.output, params.save_summary)
 
-    # 实例化模型中
-    model,params,step,epoch,optimizer,trainable_flags=model_init()
-    model2,params2,step2,epoch2,optimizer2,trainable_flags2=model_init()
-    KLloss=torch.nn.KLDivLoss(log_target=True, reduction="none")
+        # 打印模型参数
+        if dist.get_rank() == 0:
+            print("Model %s" % args.model)
+            for i in six.iterkeys(params.values()):
+                print(i, getattr(params, i))
+            print("*" * 30)
 
-    # tensorboard 初始化
-    summary.init(params.output, params.save_summary)
-    # 数据集
+        # 每个模型自己的验证集吧
+        if params.validation:
+            sorted_key, eval_dataset = data.MTPipeline.get_infer_dataset(
+                params.validation, params)
+            references = load_references(params.references)
+        else:
+            sorted_key = None
+            eval_dataset = None
+            references = None
+
+        return model,params,step,epoch,optimizer,trainable_flags,summary,sorted_key, eval_dataset,references
+
+    # 训练一趟
+    def gradient_des(loss, optimizer, model, trainable_flags, step, epoch, counter, params, sorted_key,
+                     eval_dataset, references,alias):
+        t = time.time()
+        # 计算损失和梯度
+        # loss = train_fn(features)
+        gradients = optimizer.compute_gradients(loss,
+                                                list(model.parameters()))
+        # 梯度下降
+        grads_and_vars = exclude_variables(
+            trainable_flags,
+            zip(gradients, list(model.named_parameters())))
+        optimizer.apply_gradients(grads_and_vars)
+
+        # 记录
+        t = time.time() - t
+        summary.scalar("loss", loss, step, write_every_n_steps=1)
+        summary.scalar("global_step/sec", t, step)
+        print(alias, ": epoch = %d, step = %d, loss = %.3f (%.3f sec)" %
+              (epoch + 1, step, float(loss), t))
+
+        if counter % params.update_cycle == 0:
+            # 训练结束退出
+            if step >= params.train_steps:
+                utils.evaluate(model, sorted_key, eval_dataset,
+                               params.output, references, params)
+                save_checkpoint(step, epoch, model, optimizer, params)
+
+                if dist.get_rank() == 0:
+                    summary.close()
+
+                exit(867)
+
+            # 在验证集上评估
+            if step % params.eval_steps == 0:
+                utils.evaluate(model, sorted_key, eval_dataset,
+                               params.output, references, params)
+
+            # 保存checkpoint
+            if step % params.save_checkpoint_steps == 0:
+                save_checkpoint(step, epoch, model, optimizer, params)
+
+    # 实例化模型
+    model,params,step,epoch,optimizer,trainable_flags,summary,sorted_key, eval_dataset,references=model_init(output_path="/data/home/scv0107/run/zyc/output/base_75w_a",optimizer_resume=False)
+    model2, params2, step2, epoch2, optimizer2, trainable_flags2, summary2, sorted_key2, eval_dataset2, references2 = model_init(output_path="/data/home/scv0107/run/zyc/output/base_75w_b",optimizer_resume=False)
+
+    # 载入数据集和验证集
     dataset = data.MTPipeline.get_train_dataset(params.input, params)
-    # 载入验证集
-    if params.validation:
-        sorted_key, eval_dataset = data.MTPipeline.get_infer_dataset(
-            params.validation, params)
-        references = load_references(params.references)
-    else:
-        sorted_key = None
-        eval_dataset = None
-        references = None
-
-    # 打印模型参数
-    if dist.get_rank() == 0:
-        print("Model %s" % args.model)
-        for i in six.iterkeys(params.values()):
-            print(i,getattr(params,i))
-        print("*"*30)
-
-
-    # 训练函数
-    def train_fn(inputs):
-        features, labels = inputs
-        loss = model(features, labels)
-        return loss
-
-    def train_fn_mutual(inputs):
-        features, labels = inputs
-        logits, masks, loss = model(features, labels, mode="student")
-        logits2,masks2,loss2= model2(features, labels, mode="student")
-        prob=torch.nn.functional.log_softmax(logits,dim=-1)
-        prob2=torch.nn.functional.log_softmax(logits2,dim=-1)
-        loss_sum=(KLloss(prob,prob2.detach())* masks.reshape(-1,1)).sum()/masks.sum()
-        loss_sum2=(KLloss(prob2,prob.detach())* masks2.reshape(-1,1)).sum()/masks2.sum()
-        return loss_sum,loss_sum2
 
     # 训练计数
     counter = 0
 
+    KLloss=torch.nn.KLDivLoss(log_target=True,reduction="none")
     while True:
         # 取数据循环
         for features in dataset:
@@ -499,51 +527,17 @@ def main(args):
             if counter % params.update_cycle == 0:
                 step += 1
                 utils.set_global_step(step)
-
             counter += 1
-            t = time.time()
-            # 计算损失和梯度
-            loss,loss2 = train_fn_mutual(features)
-            gradients = optimizer.compute_gradients(loss,
-                                                    list(model.parameters()))
-            gradients2 = optimizer2.compute_gradients(loss2,
-                                                      list(model2.parameters()))
-            # 梯度下降
-            grads_and_vars = exclude_variables(
-                trainable_flags,
-                zip(gradients, list(model.named_parameters())))
-            grads_and_vars2=exclude_variables(trainable_flags2,zip(gradients2,list(model2.named_parameters())))
-            optimizer.apply_gradients(grads_and_vars)
-            optimizer2.apply_gradients(grads_and_vars2)
 
-            # 记录
-            t = time.time() - t
-            summary.scalar("loss", loss, step, write_every_n_steps=1)
-            summary.scalar("global_step/sec", t, step)
-            print("epoch = %d, step = %d, loss = %.3f (%.3f sec)" %
-                  (epoch + 1, step, float(loss), t))
-
-            if counter % params.update_cycle == 0:
-                # 训练结束退出
-                if step >= params.train_steps:
-                    utils.evaluate(model, sorted_key, eval_dataset,
-                                   params.output, references, params)
-                    save_checkpoint(step, epoch, model, optimizer, params)
-
-                    if dist.get_rank() == 0:
-                        summary.close()
-
-                    return
-
-                # 在验证集上评估
-                if step % params.eval_steps == 0:
-                    utils.evaluate(model, sorted_key, eval_dataset,
-                                   params.output, references, params)
-
-                # 保存checkpoint
-                if step % params.save_checkpoint_steps == 0:
-                    save_checkpoint(step, epoch, model, optimizer, params)
-
+            feature,label=features
+            logits, masks, loss=model(feature,label,mode="student")
+            logits2, masks2, loss2 = model2(feature, label, mode="student")
+            prob = torch.nn.functional.log_softmax(logits, dim=-1)
+            prob2 = torch.nn.functional.log_softmax(logits2, dim=-1)
+            loss_sum = (KLloss(prob, prob2.detach()) * masks.reshape(-1, 1)).sum() / masks.sum()
+            loss_sum2 = (KLloss(prob2, prob.detach()) * masks2.reshape(-1, 1)).sum() / masks2.sum()
+            gradient_des(loss_sum,optimizer,model,trainable_flags,step,epoch,counter,params,sorted_key,eval_dataset,references,"Model 1")
+            gradient_des(loss_sum2,optimizer2,model2,trainable_flags2,step2,epoch2,counter,params2,sorted_key2,eval_dataset2,references2,"Model 2")
         # 一个epoch结束
         epoch += 1
 
