@@ -346,8 +346,13 @@ def load_references(pattern):
 
 
 def main(args):
+    init_done=False
+    tb_init=False
+
     # 初始化单个模型的子函数
     def model_init(mode="train",output_path=None,optimizer_resume=True):
+        nonlocal init_done
+        nonlocal tb_init
         # 获取模型的默认参数
         model_cls = models.get_model(args.model)
         params = default_params()
@@ -366,9 +371,11 @@ def main(args):
             exit(865)
         else:
             params.device = params.device_list[args.local_rank]
-            dist.init_process_group("nccl", init_method=args.url,
+            if not init_done:
+                dist.init_process_group("nccl", init_method=args.url,
                                     rank=args.local_rank,
                                     world_size=len(params.device_list))
+                init_done=True
             # 设置本进程rank，在外围被赋值
             torch.cuda.set_device(params.device_list[args.local_rank])
             torch.set_default_tensor_type(torch.cuda.FloatTensor)
@@ -446,7 +453,9 @@ def main(args):
 
         # tensorboard 初始化
         global summary
-        summary.init(params.output, params.save_summary)
+        if not tb_init:
+            summary.init(params.output, params.save_summary)
+            tb_init=True
 
         # 打印模型参数
         if dist.get_rank() == 0:
@@ -479,12 +488,12 @@ def main(args):
         grads_and_vars = exclude_variables(
             trainable_flags,
             zip(gradients, list(model.named_parameters())))
-        optimizer.apply_gradients(grads_and_vars)
+        optimizer.apply_gradients(grads_and_vars,alias)
 
         # 记录
         t = time.time() - t
-        summary.scalar("loss", loss, step, write_every_n_steps=1)
-        summary.scalar("global_step/sec", t, step)
+        summary.scalar(alias+"/loss", loss, step, write_every_n_steps=1)
+        summary.scalar(alias+"/global_step/sec", t, step)
         print(alias, ": epoch = %d, step = %d, loss = %.3f (%.3f sec)" %
               (epoch + 1, step, float(loss), t))
 
@@ -492,7 +501,7 @@ def main(args):
             # 训练结束退出
             if step >= params.train_steps:
                 utils.evaluate(model, sorted_key, eval_dataset,
-                               params.output, references, params)
+                               params.output, references, params,alias)
                 save_checkpoint(step, epoch, model, optimizer, params)
 
                 if dist.get_rank() == 0:
@@ -503,7 +512,7 @@ def main(args):
             # 在验证集上评估
             if step % params.eval_steps == 0:
                 utils.evaluate(model, sorted_key, eval_dataset,
-                               params.output, references, params)
+                               params.output, references, params,alias)
 
             # 保存checkpoint
             if step % params.save_checkpoint_steps == 0:
@@ -512,6 +521,9 @@ def main(args):
     # 实例化模型
     model,params,step,epoch,optimizer,trainable_flags,summary,sorted_key, eval_dataset,references=model_init(output_path="/data/home/scv0107/run/zyc/output/base_75w_a",optimizer_resume=False)
     model2, params2, step2, epoch2, optimizer2, trainable_flags2, summary2, sorted_key2, eval_dataset2, references2 = model_init(output_path="/data/home/scv0107/run/zyc/output/base_75w_b",optimizer_resume=False)
+
+    step=max(step,step2)
+    epoch=max(epoch,epoch2)
 
     # 载入数据集和验证集
     dataset = data.MTPipeline.get_train_dataset(params.input, params)
@@ -537,7 +549,7 @@ def main(args):
             loss_sum = (KLloss(prob, prob2.detach()) * masks.reshape(-1, 1)).sum() / masks.sum()
             loss_sum2 = (KLloss(prob2, prob.detach()) * masks2.reshape(-1, 1)).sum() / masks2.sum()
             gradient_des(loss_sum,optimizer,model,trainable_flags,step,epoch,counter,params,sorted_key,eval_dataset,references,"Model 1")
-            gradient_des(loss_sum2,optimizer2,model2,trainable_flags2,step2,epoch2,counter,params2,sorted_key2,eval_dataset2,references2,"Model 2")
+            gradient_des(loss_sum2,optimizer2,model2,trainable_flags2,step,epoch,counter,params2,sorted_key2,eval_dataset2,references2,"Model 2")
         # 一个epoch结束
         epoch += 1
 

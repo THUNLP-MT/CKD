@@ -192,7 +192,7 @@ def _evaluate_model(model, sorted_key, dataset, references, params):
     return 0.0
 
 
-def evaluate(model, sorted_key, dataset, base_dir, references, params):
+def evaluate(model, sorted_key, dataset, base_dir, references, params,alias):
     if not references:
         return
 
@@ -219,14 +219,14 @@ def evaluate(model, sorted_key, dataset, base_dir, references, params):
     global_step = get_global_step()
 
     if dist.get_rank() == 0:
-        print("Validating model at step %d" % global_step)
+        print(alias+"/Validating model at step %d" % global_step)
 
     score = _evaluate_model(model, sorted_key, dataset, references, params)
 
     # Save records
     if dist.get_rank() == 0:
-        scalar("BLEU/score", score, global_step, write_every_n_steps=1)
-        print("BLEU at step %d: %f" % (global_step, score))
+        scalar(alias+"/BLEU/score", score, global_step, write_every_n_steps=1)
+        print(alias+"/BLEU at step %d: %f" % (global_step, score))
 
         # Save checkpoint to save_path
         save({"model": model.state_dict(), "step": global_step}, save_path)
@@ -240,7 +240,7 @@ def evaluate(model, sorted_key, dataset, base_dir, references, params):
         if added is None:
             # Remove latest checkpoint
             filename = latest_checkpoint(save_path)
-            print("Removing %s" % filename)
+            print(alias+"/Removing %s" % filename)
             files = glob.glob(filename + "*")
 
             for name in files:
@@ -248,7 +248,7 @@ def evaluate(model, sorted_key, dataset, base_dir, references, params):
 
         if removed is not None:
             filename = os.path.join(save_path, removed)
-            print("Removing %s" % filename)
+            print(alias+"/Removing %s" % filename)
             files = glob.glob(filename + "*")
 
             for name in files:
@@ -257,4 +257,4 @@ def evaluate(model, sorted_key, dataset, base_dir, references, params):
         _save_score_record(record_name, records)
 
         best_score = records[0][1]
-        print("Best score at step %d: %f" % (global_step, best_score))
+        print(alias+"/Best score at step %d: %f" % (global_step, best_score))

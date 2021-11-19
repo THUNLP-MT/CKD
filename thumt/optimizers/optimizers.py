@@ -15,7 +15,7 @@ import thumt.utils.summary as summary
 from thumt.optimizers.schedules import LearningRateSchedule
 
 
-def _save_summary(grads_and_vars):
+def _save_summary(grads_and_vars,alias):
     total_norm = 0.0
 
     for grad, var in grads_and_vars:
@@ -27,13 +27,13 @@ def _save_summary(grads_and_vars):
         total_norm += grad_norm ** 2
         summary.histogram(var.tensor_name, var,
                           utils.get_global_step())
-        summary.scalar("norm/" + var.tensor_name, var.norm(),
+        summary.scalar(alias+"/norm/" + var.tensor_name, var.norm(),
                        utils.get_global_step())
-        summary.scalar("grad_norm/" + var.tensor_name, grad_norm,
+        summary.scalar(alias+"/grad_norm/" + var.tensor_name, grad_norm,
                        utils.get_global_step())
 
     total_norm = total_norm ** 0.5
-    summary.scalar("grad_norm", total_norm, utils.get_global_step())
+    summary.scalar(alias+"/grad_norm", total_norm, utils.get_global_step())
 
     return float(total_norm)
 
@@ -96,7 +96,7 @@ class Optimizer(object):
         loss.backward()
         return [v.grad if v is not None else None for v in var_list]
 
-    def apply_gradients(self, grads_and_vars):
+    def apply_gradients(self, grads_and_vars,alias):
         raise NotImplementedError("Not implemented")
 
     @property
@@ -121,13 +121,13 @@ class SGDOptimizer(Optimizer):
         if "clipper" in kwargs and kwargs["clipper"] is not None:
             self._clipper = kwargs["clipper"]
 
-    def apply_gradients(self, grads_and_vars):
+    def apply_gradients(self, grads_and_vars,alias):
         self._iterations += 1
         lr = self._learning_rate
         grads, var_list = list(zip(*grads_and_vars))
 
         if self._summaries:
-            grad_norm = _save_summary(zip(grads, var_list))
+            grad_norm = _save_summary(zip(grads, var_list),alias)
         else:
             grad_norm = _compute_grad_norm(grads)
 
@@ -146,7 +146,7 @@ class SGDOptimizer(Optimizer):
             _, var = var
 
             if isinstance(lr, LearningRateSchedule):
-                lr = lr(self._iterations)
+                lr = lr(self._iterations,alias)
 
             step_size = lr
 
@@ -189,7 +189,7 @@ class AdamOptimizer(Optimizer):
         if "clipper" in kwargs and kwargs["clipper"] is not None:
             self._clipper = kwargs["clipper"]
 
-    def apply_gradients(self, grads_and_vars):
+    def apply_gradients(self, grads_and_vars,alias):
         self._iterations += 1
         lr = self._learning_rate
         beta_1 = self._beta_1
@@ -198,7 +198,7 @@ class AdamOptimizer(Optimizer):
         grads, var_list = list(zip(*grads_and_vars))
 
         if self._summaries:
-            grad_norm = _save_summary(zip(grads, var_list))
+            grad_norm = _save_summary(zip(grads, var_list),alias)
         else:
             grad_norm = _compute_grad_norm(grads)
 
@@ -233,7 +233,7 @@ class AdamOptimizer(Optimizer):
             denom = (v.sqrt() / math.sqrt(bias_corr_2)).add_(epsilon)
 
             if isinstance(lr, LearningRateSchedule):
-                lr = lr(self._iterations)
+                lr = lr(self._iterations,alias)
 
             step_size = lr / bias_corr_1
 
@@ -290,7 +290,7 @@ class AdadeltaOptimizer(Optimizer):
         if "clipper" in kwargs and kwargs["clipper"] is not None:
             self._clipper = kwargs["clipper"]
 
-    def apply_gradients(self, grads_and_vars):
+    def apply_gradients(self, grads_and_vars,alias):
         self._iterations += 1
         lr = self._learning_rate
         rho = self._rho
@@ -299,7 +299,7 @@ class AdadeltaOptimizer(Optimizer):
         grads, var_list = list(zip(*grads_and_vars))
 
         if self._summaries:
-            grad_norm = _save_summary(zip(grads, var_list))
+            grad_norm = _save_summary(zip(grads, var_list),alias)
         else:
             grad_norm = _compute_grad_norm(grads)
 
@@ -328,7 +328,7 @@ class AdadeltaOptimizer(Optimizer):
             acc_delta = self._slots[name]["v"]
 
             if isinstance(lr, LearningRateSchedule):
-                lr = lr(self._iterations)
+                lr = lr(self._iterations,alias)
 
             square_avg.mul_(rho).addcmul_(grad, grad, value=1 - rho)
             std = square_avg.add(epsilon).sqrt_()
@@ -410,13 +410,13 @@ class LossScalingOptimizer(Optimizer):
 
         return [v.grad if v is not None else None for v in var_list]
 
-    def apply_gradients(self, grads_and_vars):
+    def apply_gradients(self, grads_and_vars,alias):
         self._iterations += 1
         grads, var_list = list(zip(*grads_and_vars))
         new_grads = []
 
         if self._summaries:
-            summary.scalar("optimizer/scale", self._scale,
+            summary.scalar(alias+"/optimizer/scale", self._scale,
                            utils.get_global_step())
 
         for grad in grads:
@@ -434,7 +434,7 @@ class LossScalingOptimizer(Optimizer):
                 new_grads.append(grad.data.float().mul_(1.0 / self._scale))
 
         self._update_if_finite_grads()
-        self._optimizer.apply_gradients(zip(new_grads, var_list))
+        self._optimizer.apply_gradients(zip(new_grads, var_list),alias)
 
     def state_dict(self):
         state = {
@@ -467,7 +467,7 @@ class MultiStepOptimizer(Optimizer):
         else:
             return self._optimizer.compute_gradients(loss, var_list, True)
 
-    def apply_gradients(self, grads_and_vars):
+    def apply_gradients(self, grads_and_vars,alias):
         size = dist.get_world_size()
         grads, var_list = list(zip(*grads_and_vars))
         self._iterations += 1
@@ -477,7 +477,7 @@ class MultiStepOptimizer(Optimizer):
                 self.sync_gradients(grads, compress=self._compress)
                 self.scale_gradients(grads, 1.0 / size)
 
-            self._optimizer.apply_gradients(zip(grads, var_list))
+            self._optimizer.apply_gradients(zip(grads, var_list),alias)
         else:
             if self._iterations % self._n != 0:
                 return
@@ -486,7 +486,7 @@ class MultiStepOptimizer(Optimizer):
                 self.sync_gradients(grads, compress=self._compress)
 
             self.scale_gradients(grads, 1.0 / (self._n * size))
-            self._optimizer.apply_gradients(zip(grads, var_list))
+            self._optimizer.apply_gradients(zip(grads, var_list),alias)
 
     def state_dict(self):
         state = {

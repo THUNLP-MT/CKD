@@ -11,7 +11,7 @@ import thumt.utils.summary as summary
 
 class LearningRateSchedule(object):
 
-    def __call__(self, step):
+    def __call__(self, step,alias):
         raise NotImplementedError("Not implemented.")
 
     def get_config(self):
@@ -44,7 +44,7 @@ class LinearWarmupRsqrtDecay(LearningRateSchedule):
         self._warmup_steps = warmup_steps
         self._summary = summary
 
-    def __call__(self, step):
+    def __call__(self, step,alias):
         if step <= self._warmup_steps:
             lr_step = self._maximum_learning_rate - self._initial_learning_rate
             lr_step /= self._warmup_steps
@@ -59,7 +59,7 @@ class LinearWarmupRsqrtDecay(LearningRateSchedule):
             lr = lr * (step ** -0.5)
 
         if self._summary:
-            summary.scalar("learning_rate", lr, utils.get_global_step())
+            summary.scalar(alias+"/learning_rate", lr, utils.get_global_step())
 
         return lr
 
@@ -84,7 +84,7 @@ class PiecewiseConstantDecay(LearningRateSchedule):
         self._values = values
         self._summary = summary
 
-    def __call__(self, step):
+    def __call__(self, step,alias):
         boundaries = self._boundaries
         values = self._values
         learning_rate = values[0]
@@ -102,7 +102,7 @@ class PiecewiseConstantDecay(LearningRateSchedule):
                     break
 
         if self._summary:
-            summary.scalar("learning_rate", learning_rate,
+            summary.scalar(alias+"/learning_rate", learning_rate,
                            utils.get_global_step())
 
         return learning_rate
@@ -127,7 +127,7 @@ class LinearExponentialDecay(LearningRateSchedule):
         self._n = n
         self._summary = summary
 
-    def __call__(self, step):
+    def __call__(self, step,alias):
         # See reference: The Best of Both Worlds: Combining Recent Advances
         # in Neural Machine Translation
         n = self._n
@@ -143,7 +143,7 @@ class LinearExponentialDecay(LearningRateSchedule):
             n * ((2 * n) ** (float(s - n * step) / float(e - s))))
 
         if self._summary:
-            summary.scalar("learning_rate", learning_rate,
+            summary.scalar(alias+"/learning_rate", learning_rate,
                            utils.get_global_step())
 
         return learning_rate
