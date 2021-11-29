@@ -27,13 +27,13 @@ def _save_summary(grads_and_vars,alias):
         total_norm += grad_norm ** 2
         summary.histogram(var.tensor_name, var,
                           utils.get_global_step())
-        summary.scalar(alias+"/norm/" + var.tensor_name, var.norm(),
+        summary.scalar("norm/"+alias+"/" + var.tensor_name, var.norm(),
                        utils.get_global_step())
-        summary.scalar(alias+"/grad_norm/" + var.tensor_name, grad_norm,
+        summary.scalar("grad_norm/"+alias+"/" + var.tensor_name, grad_norm,
                        utils.get_global_step())
 
     total_norm = total_norm ** 0.5
-    summary.scalar(alias+"/grad_norm", total_norm, utils.get_global_step())
+    summary.scalar("grad_norm/"+alias, total_norm, utils.get_global_step())
 
     return float(total_norm)
 
@@ -416,7 +416,7 @@ class LossScalingOptimizer(Optimizer):
         new_grads = []
 
         if self._summaries:
-            summary.scalar(alias+"/optimizer/scale", self._scale,
+            summary.scalar("optimizer/scale/"+alias, self._scale,
                            utils.get_global_step())
 
         for grad in grads:

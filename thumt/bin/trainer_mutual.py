@@ -439,8 +439,16 @@ def main(args):
         # 从文件中读取checkpoint
         elif checkpoint is not None:
             state = torch.load(checkpoint, map_location="cpu")
-            step = state["step"]
-            epoch = state["epoch"]
+
+            if "step" in state:
+                step = state["step"]
+            else:
+                step=0
+            
+            if "epoch" in state:
+                epoch = state["epoch"]
+            else:
+                epoch =0 
             model.load_state_dict(state["model"])
 
             if "optimizer" in state and optimizer_resume:
@@ -492,8 +500,8 @@ def main(args):
 
         # 记录
         t = time.time() - t
-        summary.scalar(alias+"/loss", loss, step, write_every_n_steps=1)
-        summary.scalar(alias+"/global_step/sec", t, step)
+        summary.scalar("loss/"+alias, loss, step, write_every_n_steps=1)
+        summary.scalar("global_step/sec/"+alias, t, step)
         print(alias, ": epoch = %d, step = %d, loss = %.3f (%.3f sec)" %
               (epoch + 1, step, float(loss), t))
 
@@ -547,7 +555,10 @@ def main(args):
             prob = torch.nn.functional.log_softmax(logits, dim=-1)
             prob2 = torch.nn.functional.log_softmax(logits2, dim=-1)
             loss_sum = (KLloss(prob, prob2.detach()) * masks.reshape(-1, 1)).sum() / masks.sum()
-            loss_sum2 = (KLloss(prob2, prob.detach()) * masks2.reshape(-1, 1)).sum() / masks2.sum()
+            # loss_sum2 = (KLloss(prob2, prob.detach()) * masks2.reshape(-1, 1)).sum() / masks2.sum()
+            # loss_sum=loss
+            # loss_sum2=loss2
+            loss_sum2=0
             gradient_des(loss_sum,optimizer,model,trainable_flags,step,epoch,counter,params,sorted_key,eval_dataset,references,"Model 1")
             gradient_des(loss_sum2,optimizer2,model2,trainable_flags2,step,epoch,counter,params2,sorted_key2,eval_dataset2,references2,"Model 2")
         # 一个epoch结束

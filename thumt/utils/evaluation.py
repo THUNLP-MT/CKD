@@ -225,7 +225,7 @@ def evaluate(model, sorted_key, dataset, base_dir, references, params,alias):
 
     # Save records
     if dist.get_rank() == 0:
-        scalar(alias+"/BLEU/score", score, global_step, write_every_n_steps=1)
+        scalar("BLEU/score/"+alias, score, global_step, write_every_n_steps=1)
         print(alias+"/BLEU at step %d: %f" % (global_step, score))
 
         # Save checkpoint to save_path

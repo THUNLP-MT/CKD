@@ -59,7 +59,7 @@ class LinearWarmupRsqrtDecay(LearningRateSchedule):
             lr = lr * (step ** -0.5)
 
         if self._summary:
-            summary.scalar(alias+"/learning_rate", lr, utils.get_global_step())
+            summary.scalar("learning_rate/"+alias, lr, utils.get_global_step())
 
         return lr
 
@@ -102,7 +102,7 @@ class PiecewiseConstantDecay(LearningRateSchedule):
                     break
 
         if self._summary:
-            summary.scalar(alias+"/learning_rate", learning_rate,
+            summary.scalar("learning_rate/"+alias, learning_rate,
                            utils.get_global_step())
 
         return learning_rate
@@ -143,7 +143,7 @@ class LinearExponentialDecay(LearningRateSchedule):
             n * ((2 * n) ** (float(s - n * step) / float(e - s))))
 
         if self._summary:
-            summary.scalar(alias+"/learning_rate", learning_rate,
+            summary.scalar("learning_rate/"+alias, learning_rate,
                            utils.get_global_step())
 
         return learning_rate

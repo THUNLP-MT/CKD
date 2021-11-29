@@ -1,6 +1,6 @@
-bpe_path=/data/home/scv0107/run/zyc/THUMTA/subword-nmt
-corpus_path=/data/home/scv0107/run/zyc/125w-zip
-thumt_pth=THUMTA/thumt/scripts
+bpe_path=/data/home/scv0107/run/zyc/subword-nmt-master
+corpus_path=/data/home/scv0107/run/zyc/wmt20-zhen
+thumt_pth=/data/home/scv0107/run/zyc/THUMTA/thumt/scripts
 
 sed -i 's// /g' ${corpus_path}/train.en ${corpus_path}/train.zh
 python ${bpe_path}/learn_joint_bpe_and_vocab.py --input ${corpus_path}/train.en ${corpus_path}/train.zh -s 32000 -o ${corpus_path}/bpecodes --write-vocabulary ${corpus_path}/vocab.en ${corpus_path}/vocab.zh

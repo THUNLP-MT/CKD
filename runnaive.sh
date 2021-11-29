@@ -17,9 +17,7 @@ python3 -u ./thumt/bin/trainer.py \
   --model transformer \
   --validation ../125w-zip/dev_test/nist06/nist06.32k.zh \
   --references "../125w-zip/dev_test/nist06/nist06.en*" \
-  --output ../output/test3 \
-  --parameters=batch_size=8192,device_list=[0,1,2,3],update_cycle=2,keep_top_checkpoint_max=1,eval_steps=500,num_encoder_layers=2,num_decoder_layers=2 \
-  --hparam_set bases \
-  --teacher transformer \
-  --teacher_path ../output/eval \
+  --output ../output/big_with_before_norm \
+  --parameters=batch_size=8192,device_list=[0,1,2,3,4,5,6,7],update_cycle=2,keep_top_checkpoint_max=1,eval_steps=500,normalization="before" \
+  --hparam_set big \
   2>&1 #| tee ../output/test1/`date '+%Y-%m-%d-%H-%M-%S'`
